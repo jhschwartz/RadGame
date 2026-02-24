@@ -13,7 +13,7 @@ LOCALIZE_JSON = os.path.join(DATA_DIR, 'localize_small.json')
 REPORT_METADATA_JSON = os.path.join(DATA_DIR, 'radgame_report.json')
 
 # image directories
-LOCALIZE_IMAGE_BASE = os.path.join(BASE_DIR, 'local_sampled_old')
+LOCALIZE_IMAGE_BASE = os.path.join(BASE_DIR, 'local_sampled')
 REPORT_IMAGE_BASE = os.path.join(BASE_DIR, 'rex_sampled_additional_cases')
 
 # ---------------------------------------------------------------------------
@@ -45,9 +45,9 @@ MEDGEMMA_MAX_NEW_TOKENS = int(os.environ.get("MEDGEMMA_MAX_NEW_TOKENS", "4096"))
 TEST_MODE = os.environ.get("RADGAME_TEST_MODE", "true").lower() in ("1", "true", "yes")
 
 TEST_LOCALIZE_CASES = [
-    "1059090736492172890440690893294928964_qnqec4.png",       # 2 findings: interstitial infiltrate + pleural thickening
-    "3337838038438312879412295722317051049_2_m1m86n.png",     # 8 findings: pleural thickening, volume loss, cardiomegaly, pacemaker, etc.
-    "13224141948247255586026463437846237918_zt30no.png",       # 1 finding: bibasal bronchiectasis (good localisation target)
+    "1059090736492172890440690893294928964_qnqec4.png",       # 2 findings: interstitial pattern, pleural thickening
+    "3337838038438312879412295722317051049_2_m1m86n.png",     # 8 findings: atelectasis, interstitial pattern, pleural thickening, pleural effusion, cardiomegaly
+    "13224141948247255586026463437846237918_zt30no.png",       # 1 finding: hyperinflation
 ]
 
 TEST_REPORT_CASES = [

@@ -63,6 +63,9 @@ from config import (
     MEDGEMMA_LORA_PATH,
     MEDGEMMA_CACHE_DIR,
     MEDGEMMA_MAX_NEW_TOKENS,
+    TEST_MODE,
+    TEST_LOCALIZE_CASES,
+    TEST_REPORT_CASES,
 )
 os.environ["RANK"] = "0"
 os.environ["WORLD_SIZE"] = "1"
@@ -157,6 +160,18 @@ with app.app_context():
         db.session.add(admin)
         db.session.commit()
 
+    # In test mode, reset completion counters so every restart begins at case 0
+    if TEST_MODE:
+        try:
+            _default = AccessCode.query.filter_by(code='DEFAULT').first()
+            if _default:
+                _default.localize_cases_completed = 0
+                _default.report_cases_completed = 0
+                db.session.commit()
+                print("TEST_MODE: reset DEFAULT access-code counters to 0")
+        except Exception as e:
+            print(f"TEST_MODE: could not reset counters: {e}")
+
 RUN_ID = str(uuid.uuid4())
 
 
@@ -224,6 +239,13 @@ for item in _localize_list:
         LOCALIZE_ORDER.append(cid)
         _loc_seen.add(cid)
 
+# In test mode, prepend the chosen test cases so they appear first
+if TEST_MODE and TEST_LOCALIZE_CASES:
+    _test_loc = [c for c in TEST_LOCALIZE_CASES if c in _loc_seen]
+    if _test_loc:
+        LOCALIZE_ORDER = _test_loc + [c for c in LOCALIZE_ORDER if c not in _test_loc]
+        print(f"TEST_MODE: pinned {len(_test_loc)} localize cases to front")
+
 class_descs = {}
 
 with open(REPORT_METADATA_JSON) as f:
@@ -240,6 +262,13 @@ def _is_valid_report_case(case_data):
     return (not comparison) or len(str(comparison)) < 50
 
 REPORT_ORDER = [cid for cid, cdata in rexgradient_reports.items() if _is_valid_report_case(cdata)]
+
+# In test mode, prepend the chosen test cases so they appear first
+if TEST_MODE and TEST_REPORT_CASES:
+    _test_rpt = [c for c in TEST_REPORT_CASES if c in REPORT_ORDER]
+    if _test_rpt:
+        REPORT_ORDER = _test_rpt + [c for c in REPORT_ORDER if c not in _test_rpt]
+        print(f"TEST_MODE: pinned {len(_test_rpt)} report cases to front")
 
 # fetch case by index from ordered lists
 def _get_ordered_localize_case(index: int):
