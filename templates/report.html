@@ -21,6 +21,9 @@
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components.css') }}"
     />
+    <style>
+      #crimsonTooltip:hover > span { visibility: visible !important; opacity: 1 !important; }
+    </style>
   </head>
 
   <body class="report-page">
@@ -34,14 +37,6 @@
         >
         <h1><span style="font-weight: 700">RadGame Report</span></h1>
         <p>Practice writing radiology reports with AI-powered evaluation</p>
-        {% if show_image_name %}
-        <div
-          id="devImageName"
-          style="margin-top: 0.25rem; font-size: 0.9rem; color: white"
-        >
-          Images: <strong></strong>
-        </div>
-        {% endif %}
       </header>
 
       <div class="main-container">
@@ -88,8 +83,8 @@
         </div>
       </div>
 
-      <!-- CRIMSON Score Results Modal (renamed from GREEN) -->
-      <div class="modal fade" id="greenScoreModal" tabindex="-1">
+      <!-- CRIMSON Score Results Modal -->
+      <div class="modal fade" id="crimsonScoreModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
           <div
             class="modal-content"
@@ -120,115 +115,117 @@
             <div class="modal-body" style="padding: 2rem">
               <!-- CRIMSON Score Section (Full Width) -->
               <div class="text-center mb-4">
-                <h4 style="color: #8b0000; font-weight: 700">
+                <h4 style="color: #8B0000; font-weight: 700">
                   CRIMSON Score:
                   <span
-                    id="greenScoreValue"
+                    id="crimsonScoreValue"
                     style="color: #333; font-weight: 800"
                     >--</span
                   >
+                  <span id="crimsonTooltip" style="display:inline-block; cursor:help; margin-left:6px; width:20px; height:20px; line-height:20px; text-align:center; border-radius:50%; background:#8B0000; color:#fff; font-size:0.7rem; font-weight:700; vertical-align:middle; position:relative;" title="">?<span style="visibility:hidden; opacity:0; transition:opacity 0.2s; position:absolute; bottom:130%; left:50%; transform:translateX(-50%); width:320px; background:#1a1a2e; color:#f0f0f0; font-size:0.75rem; font-weight:400; padding:0.75rem 1rem; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.25); text-align:left; line-height:1.5; z-index:9999; pointer-events:none;"><strong style='color:#e8c4c4;'>CRIMSON Score</strong> (−1 to +1) measures radiology report accuracy using clinically-weighted error penalties.<br><br><strong style='color:#e8c4c4;'>Errors penalised:</strong><br>• <em>False findings</em> — reported but not in reference<br>• <em>Missing findings</em> — in reference but not reported<br>• <em>Attribute errors</em> — wrong location, severity, etc.<br><br>Penalties scale with <strong style='color:#e8c4c4;'>clinical significance</strong>: urgent findings are weighted most heavily.<br><br><span style='font-size:0.68rem; color:#aaa;'>Raissi et al., "CRIMSON: A Clinical Reporting Integrity Metric Scored by Ordered Nodal Comparison," 2025.</span></span></span>
                 </h4>
+                <div id="crimsonScoreBar" style="display:none; margin: 0.75rem auto; max-width: 400px;">
+                  <div style="position:relative; height:18px; background: linear-gradient(to right, #800020 0%, #b5485d 30%, #d4a574 50%, #6b8e6b 75%, #2e6b3a 100%); border-radius:9px; overflow:visible;">
+                    <div id="crimsonScoreMarker" style="position:absolute; top:-3px; width:4px; height:24px; background:#333; border-radius:2px; transition: left 0.3s;"></div>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:#888; margin-top:2px;">
+                    <span>-1</span><span>0</span><span>1</span>
+                  </div>
+                </div>
               </div>
+
+              <!-- Ground Truth -->
               <div class="mb-4" id="groundTruthWrap" style="display: none">
-                <h5
-                  style="
-                    color: #8b0000;
-                    font-weight: 600;
-                    margin-bottom: 0.75rem;
-                  "
-                >
+                <h5 style="color: #8b0000; font-weight: 600; margin-bottom: 0.75rem;">
                   Ground Truth Report Findings
                 </h5>
                 <div class="row" style="gap: 0.5rem 0">
                   <div class="col-12">
-                    <div
-                      id="gtFindings"
-                      style="
-                        background: #f8f9fa;
-                        border: 1px solid #e9ecef;
-                        border-radius: 12px;
-                        padding: 1rem;
-                        white-space: pre-wrap;
-                      "
-                    ></div>
+                    <div id="gtFindings" style="background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 12px; padding: 1rem; white-space: pre-wrap;"></div>
                   </div>
-                  <!-- Optionally show impressions if available later
-                            <div class="col-12">
-                                <h6 style="margin:0.25rem 0;">Impressions</h6>
-                                <div id="gtImpressions" style="background:#f8f9fa; border:1px solid #e9ecef; border-radius:12px; padding:1rem; white-space:pre-wrap;"></div>
-                            </div>
-                            -->
                 </div>
               </div>
-              <div class="mb-4">
-                <h5
-                  style="color: #8b0000; font-weight: 600; margin-bottom: 1rem"
-                >
-                  Summary
-                </h5>
-                <div
-                  id="greenSummary"
-                  style="
-                    background: #f8f9fa;
-                    border: 1px solid #e9ecef;
-                    border-radius: 12px;
-                    padding: 1.5rem;
-                    line-height: 1.6;
-                  "
-                ></div>
+
+              <!-- Summary (GPT mode) -->
+              <div class="mb-4" id="summarySection">
+                <h5 style="color: #8B0000; font-weight: 600; margin-bottom: 1rem">Summary</h5>
+                <div id="crimsonSummary" style="background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 12px; padding: 1.5rem; line-height: 1.6;"></div>
               </div>
+
+              <!-- ========== CRIMSON Error Categories (MedGemma mode) ========== -->
+              <div id="crimsonErrorsSection" style="display: none;">
+
+                <!-- 1) False Findings -->
+                <div class="mb-4" id="falseFindingsWrap" style="display: none;">
+                  <h5 style="color: #8B0000; font-weight: 600; margin-bottom: 0.5rem;">
+                    <span style="display:inline-flex; align-items:center; gap:6px;">
+                      False Findings
+                      <span class="badge" id="cntFalse" style="font-size:0.75rem; background:#8B0000; color:#fff;">0</span>
+                    </span>
+                  </h5>
+                  <p style="font-size:0.82rem; color:#666; margin-bottom:0.5rem;">Findings reported by the candidate that are <strong>not present</strong> in the reference.</p>
+                  <div id="falseFindingsList"></div>
+                </div>
+
+                <!-- 2) Missing Findings -->
+                <div class="mb-4" id="missingFindingsWrap" style="display: none;">
+                  <h5 style="color: #8B0000; font-weight: 600; margin-bottom: 0.5rem;">
+                    <span style="display:inline-flex; align-items:center; gap:6px;">
+                      Missing Findings
+                      <span class="badge" id="cntMissing" style="font-size:0.75rem; background:#a0344a; color:#fff;">0</span>
+                    </span>
+                  </h5>
+                  <p style="font-size:0.82rem; color:#666; margin-bottom:0.5rem;">Findings present in the reference that were <strong>not reported</strong> by the candidate.</p>
+                  <div id="missingFindingsList"></div>
+                </div>
+
+                <!-- 3) Attribute Errors -->
+                <div class="mb-4" id="attrErrorsWrap" style="display: none;">
+                  <h5 style="color: #8B0000; font-weight: 600; margin-bottom: 0.5rem;">
+                    <span style="display:inline-flex; align-items:center; gap:6px;">
+                      Attribute Errors
+                      <span class="badge" id="cntAttr" style="font-size:0.75rem; background:#555; color:#fff;">0</span>
+                    </span>
+                  </h5>
+                  <p style="font-size:0.82rem; color:#666; margin-bottom:0.5rem;">Matched findings with incorrect or incomplete attributes (location, severity, descriptors, etc.).</p>
+                  <div id="attrErrorsList"></div>
+                </div>
+              </div>
+
+              <!-- ========== Legacy error buckets (GPT mode) ========== -->
               <div class="mb-4" id="errorBuckets" style="display: none">
-                <h5
-                  style="
-                    color: #8b0000;
-                    font-weight: 600;
-                    margin-bottom: 0.75rem;
-                  "
-                >
-                  Error Types
-                </h5>
+                <h5 style="color: #8b0000; font-weight: 600; margin-bottom: 0.75rem;">Error Types</h5>
                 <div class="row" style="gap: 0.5rem 0">
                   <div class="col-md-6">
-                    <h6 style="margin: 0.4rem 0">
-                      a) False positive findings
-                      <span class="count badge bg-secondary ms-1" id="cntA"
-                        >0</span
-                      >
-                    </h6>
+                    <h6 style="margin: 0.4rem 0">a) False positive findings <span class="count badge bg-secondary ms-1" id="cntA">0</span></h6>
                     <ul id="errA" style="padding-left: 1.2rem"></ul>
                   </div>
                   <div class="col-md-6">
-                    <h6 style="margin: 0.4rem 0">
-                      b) Missing findings
-                      <span class="count badge bg-secondary ms-1" id="cntB"
-                        >0</span
-                      >
-                    </h6>
+                    <h6 style="margin: 0.4rem 0">b) Missing findings <span class="count badge bg-secondary ms-1" id="cntB">0</span></h6>
                     <ul id="errB" style="padding-left: 1.2rem"></ul>
                   </div>
                   <div class="col-md-6">
-                    <h6 style="margin: 0.4rem 0">
-                      c) Location/position errors
-                      <span class="count badge bg-secondary ms-1" id="cntC"
-                        >0</span
-                      >
-                    </h6>
+                    <h6 style="margin: 0.4rem 0">c) Location/position errors <span class="count badge bg-secondary ms-1" id="cntC">0</span></h6>
                     <ul id="errC" style="padding-left: 1.2rem"></ul>
                   </div>
                   <div class="col-md-6">
-                    <h6 style="margin: 0.4rem 0">
-                      d) Severity misassessment
-                      <span class="count badge bg-secondary ms-1" id="cntD"
-                        >0</span
-                      >
-                    </h6>
+                    <h6 style="margin: 0.4rem 0">d) Severity misassessment <span class="count badge bg-secondary ms-1" id="cntD">0</span></h6>
                     <ul id="errD" style="padding-left: 1.2rem"></ul>
                   </div>
                 </div>
               </div>
+
+              <!-- Matched findings -->
               <div class="mb-2" id="matchedFindingsWrap" style="display: none">
-                <h6 style="margin: 0.4rem 0">Matched Findings</h6>
-                <ul id="matchedFindings" style="padding-left: 1.2rem"></ul>
+                <h5 style="color: #2e6b3a; font-weight: 600; margin-bottom: 0.5rem;">
+                  <span style="display:inline-flex; align-items:center; gap:6px;">
+                    Matched Findings
+                    <span class="badge" id="cntMatched" style="font-size:0.75rem; background:#2e6b3a; color:#fff;">0</span>
+                  </span>
+                </h5>
+                <div id="matchedFindingsList"></div>
+                <!-- legacy list kept for GPT mode -->
+                <ul id="matchedFindings" style="padding-left: 1.2rem; display:none;"></ul>
               </div>
 
               <!-- Style Score Section (Bottom) -->
@@ -388,8 +385,8 @@
         } catch (_) {}
         const findingsText = document.getElementById("findingsText");
         const submitButton = document.getElementById("submitReport");
-        const greenScoreModal = new bootstrap.Modal(
-          document.getElementById("greenScoreModal")
+        const crimsonScoreModal = new bootstrap.Modal(
+          document.getElementById("crimsonScoreModal")
         );
         const nextCaseButton = document.getElementById("nextCase");
         let hasSubmitted = false;
@@ -441,13 +438,228 @@
             )}" alt="Medical image">`;
             imageContainer.appendChild(imgDiv);
           });
-          // Set dev banner image names if enabled
-          const devNameEl = document.getElementById("devImageName");
-          if (devNameEl) {
-            const strong = devNameEl.querySelector("strong");
-            if (strong) strong.textContent = (data.images || []).join(", ");
-          }
         });
+
+        // ========== Populate the feedback modal (both GPT & MedGemma modes) ==========
+        function _populateModal(data) {
+          const isCrimson = data.scorer === 'medgemma' && data.crimson;
+
+          // ---- Score display ----
+          const scoreEl = document.getElementById('crimsonScoreValue');
+          const barWrap = document.getElementById('crimsonScoreBar');
+          const marker  = document.getElementById('crimsonScoreMarker');
+          if (isCrimson) {
+            const cs = parseFloat(data.crimson.crimson_score);
+            scoreEl.textContent = cs.toFixed(2);
+            // Position marker on -1..+1 bar
+            const pct = ((cs + 1) / 2) * 100;
+            marker.style.left = `calc(${pct}% - 2px)`;
+            barWrap.style.display = 'block';
+          } else {
+            scoreEl.textContent = `${(data.green_score * 100).toFixed(0)}%`;
+            barWrap.style.display = 'none';
+          }
+
+          // Save recent scores for minibar
+          try {
+            const code = (window.ACCESS_CODE || 'anon').toString();
+            const rk = s => `rg_${code}_report_${s}`;
+            let recent = JSON.parse(localStorage.getItem(rk('recent_scores')) || '[]');
+            if (!Array.isArray(recent)) recent = [];
+            const scoreNum = isCrimson ? parseFloat(data.crimson.crimson_score) : parseFloat((data.green_score * 100).toFixed(0));
+            recent.push({g: scoreNum, t: Date.now()});
+            if (recent.length > 5) recent = recent.slice(-5);
+            localStorage.setItem(rk('recent_scores'), JSON.stringify(recent));
+          } catch(e) {}
+
+          // ---- Ground Truth ----
+          const gtWrap = document.getElementById('groundTruthWrap');
+          const gtf = document.getElementById('gtFindings');
+          if (data.ground_truth && data.ground_truth.findings) {
+            if (gtf) gtf.textContent = data.ground_truth.findings;
+            if (gtWrap) gtWrap.style.display = 'block';
+          } else {
+            if (gtWrap) gtWrap.style.display = 'none';
+          }
+
+          // ---- Summary (GPT mode only) ----
+          const summarySection = document.getElementById('summarySection');
+          const crimsonSummary = document.getElementById('crimsonSummary');
+          if (!isCrimson && data.summary) {
+            crimsonSummary.innerHTML = `<p>${data.summary}</p>`;
+            summarySection.style.display = 'block';
+          } else {
+            summarySection.style.display = 'none';
+          }
+
+          // ---- CRIMSON error categories (MedGemma mode) ----
+          const crimsonSection = document.getElementById('crimsonErrorsSection');
+          if (isCrimson) {
+            crimsonSection.style.display = 'block';
+            const c = data.crimson;
+            const sigBadge = (sig) => {
+              const colors = {
+                urgent: '#8B0000',
+                actionable_not_urgent: '#a0344a',
+                not_actionable_not_urgent: '#6b7280',
+                benign_expected: '#2e6b3a',
+              };
+              const bg = colors[sig] || '#888';
+              const label = (sig || 'unknown').replace(/_/g, ' ');
+              return `<span style="display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.72rem; color:#fff; background:${bg}; margin-left:6px;">${label}</span>`;
+            };
+
+            // False Findings
+            const ffWrap = document.getElementById('falseFindingsWrap');
+            const ffList = document.getElementById('falseFindingsList');
+            const cntFalse = document.getElementById('cntFalse');
+            const ff = c.false_findings || [];
+            cntFalse.textContent = String(ff.length);
+            ffList.innerHTML = '';
+            if (ff.length) {
+              ffWrap.style.display = 'block';
+              ff.forEach(f => {
+                const card = document.createElement('div');
+                card.style.cssText = 'background:#fdf2f2; border:1px solid #d4a0a0; border-radius:8px; padding:0.65rem 0.85rem; margin-bottom:0.4rem;';
+                card.innerHTML = `<span style="font-weight:500;">${_esc(f.finding)}</span>${sigBadge(f.clinical_significance)}`;
+                ffList.appendChild(card);
+              });
+            } else {
+              ffWrap.style.display = 'none';
+            }
+
+            // Missing Findings
+            const mfWrap = document.getElementById('missingFindingsWrap');
+            const mfList = document.getElementById('missingFindingsList');
+            const cntMissing = document.getElementById('cntMissing');
+            const mf = c.missing_findings || [];
+            cntMissing.textContent = String(mf.length);
+            mfList.innerHTML = '';
+            if (mf.length) {
+              mfWrap.style.display = 'block';
+              mf.forEach(f => {
+                const card = document.createElement('div');
+                card.style.cssText = 'background:#fef6f0; border:1px solid #d4a0a0; border-radius:8px; padding:0.65rem 0.85rem; margin-bottom:0.4rem;';
+                card.innerHTML = `<span style="font-weight:500;">${_esc(f.finding)}</span>${sigBadge(f.clinical_significance)}`;
+                mfList.appendChild(card);
+              });
+            } else {
+              mfWrap.style.display = 'none';
+            }
+
+            // Attribute Errors
+            const aeWrap = document.getElementById('attrErrorsWrap');
+            const aeList = document.getElementById('attrErrorsList');
+            const cntAttr = document.getElementById('cntAttr');
+            const ae = c.attribute_errors || [];
+            cntAttr.textContent = String(ae.length);
+            aeList.innerHTML = '';
+            if (ae.length) {
+              aeWrap.style.display = 'block';
+              ae.forEach(e => {
+                const sevColor = e.severity === 'significant' ? '#8B0000' : '#888';
+                const typeTags = (e.error_types || []).map(t =>
+                  `<span style="display:inline-block; padding:1px 6px; border-radius:3px; font-size:0.7rem; background:#f0e6e6; color:#8B0000; margin-right:4px;">${_esc(t)}</span>`
+                ).join('');
+                const card = document.createElement('div');
+                card.style.cssText = 'background:#f8f5f5; border:1px solid #e0d5d5; border-radius:8px; padding:0.65rem 0.85rem; margin-bottom:0.4rem;';
+                card.innerHTML = `
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                    <span style="font-weight:600; font-size:0.85rem;">Severity: <span style="color:${sevColor}; text-transform:capitalize;">${_esc(e.severity || 'unknown')}</span></span>
+                    <span>${typeTags}</span>
+                  </div>
+                  <div style="font-size:0.82rem; margin-bottom:2px;"><strong>Ref:</strong> ${_esc(e.ref_finding)}</div>
+                  <div style="font-size:0.82rem; margin-bottom:2px;"><strong>Pred:</strong> ${_esc(e.pred_finding)}</div>
+                  ${e.explanation ? `<div style="font-size:0.8rem; color:#555; font-style:italic; margin-top:4px;">${_esc(e.explanation)}</div>` : ''}
+                `;
+                aeList.appendChild(card);
+              });
+            } else {
+              aeWrap.style.display = 'none';
+            }
+          } else {
+            crimsonSection.style.display = 'none';
+          }
+
+          // ---- Legacy error buckets (GPT mode) ----
+          const legacyWrap = document.getElementById('errorBuckets');
+          if (!isCrimson) {
+            const buckets = data.errors || {};
+            const setList = (id, items) => {
+              const ul = document.getElementById(id);
+              if (!ul) return;
+              ul.innerHTML = '';
+              (items || []).forEach(t => { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
+            };
+            setList('errA', buckets.a); setList('errB', buckets.b); setList('errC', buckets.c); setList('errD', buckets.d);
+            const setCnt = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = String((n || []).length); };
+            setCnt('cntA', buckets.a); setCnt('cntB', buckets.b); setCnt('cntC', buckets.c); setCnt('cntD', buckets.d);
+            const hasAny = ['a','b','c','d'].some(k => (buckets[k] || []).length);
+            legacyWrap.style.display = hasAny ? 'block' : 'none';
+          } else {
+            legacyWrap.style.display = 'none';
+          }
+
+          // ---- Matched Findings ----
+          const mwrap = document.getElementById('matchedFindingsWrap');
+          const mlistNew = document.getElementById('matchedFindingsList');
+          const mlistOld = document.getElementById('matchedFindings');
+          const cntMatched = document.getElementById('cntMatched');
+
+          if (isCrimson) {
+            const mf = (data.crimson.matched_findings || []);
+            cntMatched.textContent = String(mf.length);
+            mlistNew.innerHTML = '';
+            mlistOld.style.display = 'none';
+            if (mf.length) {
+              mwrap.style.display = 'block';
+              mf.forEach(m => {
+                const card = document.createElement('div');
+                card.style.cssText = 'background:#f0f5f0; border:1px solid #a5c6a7; border-radius:8px; padding:0.5rem 0.85rem; margin-bottom:0.35rem; font-size:0.82rem;';
+                card.innerHTML = `<strong>Ref:</strong> ${_esc(m.ref_finding)} &nbsp;↔&nbsp; <strong>Pred:</strong> ${_esc(m.pred_finding)}`;
+                mlistNew.appendChild(card);
+              });
+            } else {
+              mwrap.style.display = 'none';
+            }
+          } else {
+            const mArr = data.matched_findings || [];
+            mlistNew.innerHTML = '';
+            mlistOld.innerHTML = '';
+            if (cntMatched) cntMatched.textContent = String(mArr.length);
+            if (mArr.length) {
+              mwrap.style.display = 'block';
+              mlistOld.style.display = 'block';
+              mArr.forEach(t => { const li = document.createElement('li'); li.textContent = t; mlistOld.appendChild(li); });
+            } else {
+              mwrap.style.display = 'none';
+            }
+          }
+
+          // ---- StyleScore ----
+          if (data.style_data) {
+            const sd = data.style_data;
+            document.getElementById('styleScoreValue').textContent = `${Math.round(sd.style_score)}%`;
+            document.getElementById('systematicScore').textContent = sd.systematic_evaluation_score + '/1';
+            document.getElementById('organizationScore').textContent = sd.organization_language_score + '/1';
+            let hasRecs = false;
+            if (sd.systematic_evaluation_recommendation && sd.systematic_evaluation_recommendation.trim()) {
+              document.getElementById('systematicRecommendationText').textContent = sd.systematic_evaluation_recommendation;
+              document.getElementById('systematicRecommendation').style.display = 'block'; hasRecs = true;
+            } else { document.getElementById('systematicRecommendation').style.display = 'none'; }
+            if (sd.organization_language_recommendation && sd.organization_language_recommendation.trim()) {
+              document.getElementById('organizationRecommendationText').textContent = sd.organization_language_recommendation;
+              document.getElementById('organizationRecommendation').style.display = 'block'; hasRecs = true;
+            } else { document.getElementById('organizationRecommendation').style.display = 'none'; }
+            document.getElementById('noRecommendations').style.display = hasRecs ? 'none' : 'block';
+            document.getElementById('styleScoreSection').style.display = 'block';
+          } else {
+            document.getElementById('styleScoreSection').style.display = 'none';
+          }
+        }
+
+        // Escape HTML for safe rendering
+        function _esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
         // Handle report submission
         submitButton.addEventListener("click", function () {
@@ -455,76 +667,8 @@
           // If already submitted, just reopen the modal with the cached analysis
           if (hasSubmitted && lastAnalysis) {
             // Re-populate from cached data and show
-            // Show CRIMSON score as a percentage
-            document.getElementById("greenScoreValue").textContent = `${(
-              lastAnalysis.green_score * 100
-            ).toFixed(0)}%`;
-            document.getElementById(
-              "greenSummary"
-            ).innerHTML = `<p>${lastAnalysis.summary}</p>`;
-            // Ground truth
-            const gtWrap = document.getElementById("groundTruthWrap");
-            const gtf = document.getElementById("gtFindings");
-            const gti = document.getElementById("gtImpressions");
-            if (
-              lastAnalysis.ground_truth &&
-              (lastAnalysis.ground_truth.findings ||
-                lastAnalysis.ground_truth.impressions)
-            ) {
-              if (gtf)
-                gtf.textContent = lastAnalysis.ground_truth.findings || "";
-              if (gti)
-                gti.textContent = lastAnalysis.ground_truth.impressions || "";
-              if (gtWrap) gtWrap.style.display = "block";
-            } else {
-              if (gtWrap) gtWrap.style.display = "none";
-            }
-            // Errors
-            const buckets = lastAnalysis.errors || {};
-            const setList = (id, items) => {
-              const ul = document.getElementById(id);
-              if (!ul) return;
-              ul.innerHTML = "";
-              (items || []).forEach((t) => {
-                const li = document.createElement("li");
-                li.textContent = t;
-                ul.appendChild(li);
-              });
-            };
-            setList("errA", buckets.a);
-            setList("errB", buckets.b);
-            setList("errC", buckets.c);
-            setList("errD", buckets.d);
-            const setCnt = (id, n) => {
-              const el = document.getElementById(id);
-              if (el) el.textContent = String((n || []).length);
-            };
-            setCnt("cntA", buckets.a);
-            setCnt("cntB", buckets.b);
-            setCnt("cntC", buckets.c);
-            setCnt("cntD", buckets.d);
-            const wrap = document.getElementById("errorBuckets");
-            const hasAny = ["a", "b", "c", "d"].some(
-              (k) => (buckets[k] || []).length
-            );
-            wrap.style.display = hasAny ? "block" : "none";
-            const mwrap = document.getElementById("matchedFindingsWrap");
-            const mlist = document.getElementById("matchedFindings");
-            if (
-              Array.isArray(lastAnalysis.matched_findings) &&
-              lastAnalysis.matched_findings.length
-            ) {
-              mlist.innerHTML = "";
-              lastAnalysis.matched_findings.forEach((t) => {
-                const li = document.createElement("li");
-                li.textContent = t;
-                mlist.appendChild(li);
-              });
-              mwrap.style.display = "block";
-            } else {
-              mwrap.style.display = "none";
-            }
-            greenScoreModal.show();
+            _populateModal(lastAnalysis);
+            crimsonScoreModal.show();
             return;
           }
           const report = {
@@ -586,163 +730,10 @@
               submitButton.textContent = "View Report";
               submitButton.disabled = false; // allow viewing
               submittingNow = false;
-              // Display CRIMSON score results
-              // Show CRIMSON score as a percentage
-              const pct = (data.green_score * 100).toFixed(0);
-              document.getElementById(
-                "greenScoreValue"
-              ).textContent = `${pct}%`;
-              try {
-                const code = (window.ACCESS_CODE || "anon").toString();
-                const rk = (s) => `rg_${code}_report_${s}`;
-                let recent = JSON.parse(
-                  localStorage.getItem(rk("recent_scores")) || "[]"
-                );
-                if (!Array.isArray(recent)) recent = [];
-                recent.push({ g: parseFloat(pct), t: Date.now() });
-                if (recent.length > 5) recent = recent.slice(-5);
-                localStorage.setItem(
-                  rk("recent_scores"),
-                  JSON.stringify(recent)
-                );
-              } catch (e) {}
-              document.getElementById(
-                "greenSummary"
-              ).innerHTML = `<p>${data.summary}</p>`;
-              // Ground truth
-              const gtWrap = document.getElementById("groundTruthWrap");
-              const gtf = document.getElementById("gtFindings");
-              const gti = document.getElementById("gtImpressions");
-              if (
-                data.ground_truth &&
-                (data.ground_truth.findings || data.ground_truth.impressions)
-              ) {
-                if (gtf) gtf.textContent = data.ground_truth.findings || "";
-                if (gti) gti.textContent = data.ground_truth.impressions || "";
-                if (gtWrap) gtWrap.style.display = "block";
-              } else {
-                if (gtWrap) gtWrap.style.display = "none";
-              }
-              // Populate error buckets
-              const buckets = data.errors || {};
-              const hasAny = ["a", "b", "c", "d"].some(
-                (k) => (buckets[k] || []).length
-              );
-              const wrap = document.getElementById("errorBuckets");
-              const setList = (id, items) => {
-                const ul = document.getElementById(id);
-                if (!ul) return;
-                ul.innerHTML = "";
-                (items || []).forEach((t) => {
-                  const li = document.createElement("li");
-                  li.textContent = t;
-                  ul.appendChild(li);
-                });
-              };
-              setList("errA", buckets.a);
-              setList("errB", buckets.b);
-              setList("errC", buckets.c);
-              setList("errD", buckets.d);
-              const setCnt = (id, n) => {
-                const el = document.getElementById(id);
-                if (el) el.textContent = String((n || []).length);
-              };
-              setCnt("cntA", buckets.a);
-              setCnt("cntB", buckets.b);
-              setCnt("cntC", buckets.c);
-              setCnt("cntD", buckets.d);
-              wrap.style.display = hasAny ? "block" : "none";
-              // Matched findings
-              const mwrap = document.getElementById("matchedFindingsWrap");
-              const mlist = document.getElementById("matchedFindings");
-              if (
-                Array.isArray(data.matched_findings) &&
-                data.matched_findings.length
-              ) {
-                mlist.innerHTML = "";
-                data.matched_findings.forEach((t) => {
-                  const li = document.createElement("li");
-                  li.textContent = t;
-                  mlist.appendChild(li);
-                });
-                mwrap.style.display = "block";
-              } else {
-                mwrap.style.display = "none";
-              }
+              // Display score results via shared helper
+              _populateModal(data);
 
-              // Populate StyleScore data
-              if (data.style_data) {
-                const styleData = data.style_data;
-                document.getElementById(
-                  "styleScoreValue"
-                ).textContent = `${Math.round(styleData.style_score)}%`;
-
-                // Show breakdown scores as fractions
-                document.getElementById("systematicScore").textContent =
-                  styleData.systematic_evaluation_score + "/1";
-                document.getElementById("organizationScore").textContent =
-                  styleData.organization_language_score + "/1";
-
-                // Handle individual recommendations
-                let hasRecommendations = false;
-
-                // Systematic Evaluation
-                if (
-                  styleData.systematic_evaluation_recommendation &&
-                  styleData.systematic_evaluation_recommendation.trim()
-                ) {
-                  document.getElementById(
-                    "systematicRecommendationText"
-                  ).textContent =
-                    styleData.systematic_evaluation_recommendation;
-                  document.getElementById(
-                    "systematicRecommendation"
-                  ).style.display = "block";
-                  hasRecommendations = true;
-                } else {
-                  document.getElementById(
-                    "systematicRecommendation"
-                  ).style.display = "none";
-                }
-
-                // Organization & Language
-                if (
-                  styleData.organization_language_recommendation &&
-                  styleData.organization_language_recommendation.trim()
-                ) {
-                  document.getElementById(
-                    "organizationRecommendationText"
-                  ).textContent =
-                    styleData.organization_language_recommendation;
-                  document.getElementById(
-                    "organizationRecommendation"
-                  ).style.display = "block";
-                  hasRecommendations = true;
-                } else {
-                  document.getElementById(
-                    "organizationRecommendation"
-                  ).style.display = "none";
-                }
-
-                // Show "no recommendations" if none exist
-                if (!hasRecommendations) {
-                  document.getElementById("noRecommendations").style.display =
-                    "block";
-                } else {
-                  document.getElementById("noRecommendations").style.display =
-                    "none";
-                }
-
-                // Show the entire StyleScore section
-                document.getElementById("styleScoreSection").style.display =
-                  "block";
-              } else {
-                // Hide StyleScore section if not available
-                document.getElementById("styleScoreSection").style.display =
-                  "none";
-              }
-
-              greenScoreModal.show();
+              crimsonScoreModal.show();
             })
             .catch((error) => {
               alert(
@@ -766,7 +757,7 @@
           // Clear form and load next case
           findingsText.value = "";
           imageContainer.innerHTML = "";
-          greenScoreModal.hide();
+          crimsonScoreModal.hide();
           // Fetch next case explicitly so we can detect cap before reload
           fetch("/api/report/case")
             .then(async (r) => {

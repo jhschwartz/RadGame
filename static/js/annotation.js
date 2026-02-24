@@ -436,7 +436,7 @@
     if (IS_REPORT_PAGE) {
       const reportCount = (serverSummary && serverSummary.report_cases_completed) || 0;
       const avgGreen = serverSummary ? serverSummary.avg_green_score : null;
-      // Build last 5 GREEN stats
+      // Build last 5 CRIMSON stats
       let recentReportHTML = '';
       try {
         const rs = JSON.parse(localStorage.getItem(rk('recent_scores'))||'[]');
@@ -463,7 +463,7 @@
             <span style="font-weight:600; color:#333; font-size:1.1rem;">Report Images: ${reportCount}</span>
             ${IS_GUIDED_REPORT ? '' : `
             <div style=\"display:flex; align-items:center; gap:0.5rem;\">
-              <span style=\"font-weight:500; color:#6c757d; font-size:0.9rem;\">Avg GREEN:</span>
+              <span style=\"font-weight:500; color:#6c757d; font-size:0.9rem;\">Avg CRIMSON:</span>
               <span style=\"font-weight:600; color:#8B0000;\">${avgGreen != null ? `${(avgGreen * 100).toFixed(0)}%` : 'N/A'}</span>
             </div>`}
             ${IS_GUIDED_REPORT ? '' : recentReportHTML}

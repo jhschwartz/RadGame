@@ -57,7 +57,12 @@ from config import (
     REPORT_METADATA_JSON,
     REPORT_IMAGE_BASE,
     LOCALIZE_IMAGE_BASE,
-    SHOW_IMAGE_NAME
+    SHOW_IMAGE_NAME,
+    REPORT_SCORER,
+    MEDGEMMA_BASE_MODEL,
+    MEDGEMMA_LORA_PATH,
+    MEDGEMMA_CACHE_DIR,
+    MEDGEMMA_MAX_NEW_TOKENS,
 )
 os.environ["RANK"] = "0"
 os.environ["WORLD_SIZE"] = "1"
@@ -1151,8 +1156,57 @@ def submit_report():
 
     print(reference)
     print(case_id)
-    
-    try:
+
+    # ----- MedGemma / CRIMSON scoring path -----
+    if REPORT_SCORER == 'medgemma':
+        try:
+            from scores.crimson_score import evaluate_report as _medgemma_evaluate
+
+            patient_ctx = {}
+            if age_str != 'Unknown':
+                patient_ctx['Age'] = age_str
+            if indication_str != 'None provided':
+                patient_ctx['Indication'] = indication_str
+
+            mg_result = _medgemma_evaluate(
+                reference_findings=case_data.get('Findings', ''),
+                predicted_findings=findings,
+                patient_context=patient_ctx or None,
+                base_model_id=MEDGEMMA_BASE_MODEL,
+                lora_path=MEDGEMMA_LORA_PATH,
+                cache_dir=MEDGEMMA_CACHE_DIR,
+                max_new_tokens=MEDGEMMA_MAX_NEW_TOKENS,
+            )
+
+            crimson_score_val = float(mg_result['crimson_score'])
+            green_score = max(0.0, min(1.0, (crimson_score_val + 1) / 2)) if crimson_score_val < 0 else crimson_score_val
+            std_score = 1 - green_score
+            summary = ''
+            # Build legacy error buckets for DB storage compatibility
+            ClinicallySignificantErrors = {'a': [], 'b': [], 'c': [], 'd': []}
+            for ff in mg_result.get('false_findings', []):
+                ClinicallySignificantErrors['a'].append(ff.get('finding', ''))
+            for mf in mg_result.get('missing_findings', []):
+                ClinicallySignificantErrors['b'].append(mf.get('finding', ''))
+            for ae in mg_result.get('attribute_errors', []):
+                if 'location' in ae.get('error_types', []):
+                    ClinicallySignificantErrors['c'].append(ae.get('explanation', ''))
+                else:
+                    ClinicallySignificantErrors['d'].append(ae.get('explanation', ''))
+            MatchedFindings = [m.get('ref_finding', '') for m in mg_result.get('matched_findings', [])]
+            response_data = mg_result.get('_crimson_full', {})
+            # Store the full CRIMSON frontend payload for the response
+            _crimson_frontend = mg_result
+
+        except Exception as mg_err:
+            import traceback
+            traceback.print_exc()
+            print(f"[MedGemma] Scoring failed: {mg_err}")
+            return jsonify({'error': f'MedGemma scoring failed: {mg_err}'}), 500
+
+    # ----- GPT / OpenAI scoring path (default) -----
+    else:
+      try:
         prompt = (f'''
                 Objective:
 
@@ -1234,7 +1288,7 @@ def submit_report():
         }
         MatchedFindings = list(response_data.get('MatchedFindings') or [])
 
-        # compute GREEN score from matched findings and errors
+        # compute CRIMSON score from matched findings and errors
         total_matched = len(MatchedFindings)
         total_sig_errors = len(ClinicallySignificantErrors['a']) + \
                             len(ClinicallySignificantErrors['b']) + \
@@ -1248,100 +1302,119 @@ def submit_report():
 
         std_score = 1 - green_score  # std_score is the inverse of green_score
 
-        # Create report log entry
-        try:
-            # Fetch current report cases completed BEFORE increment for snapshot
-            access_row = AccessCode.query.filter_by(code=session['access_code']).first()
-            pre_increment_total = int(access_row.report_cases_completed or 0) if access_row else 0
-            # Block further practice submissions if cap reached or post-test already taken
-            if access_row and access_row.took_report_pre and pre_increment_total >= REPORT_POST_REQUIRED:
-                return jsonify({'error': 'practice_complete'}), 403
-            if access_row and access_row.took_report_post:
-                return jsonify({'error': 'post_test_completed'}), 403
-            # Determine cumulative checkpoint for continuous timer
-            prev_rows = RadgameReportLog.query.filter_by(access_code_id=session['access_code']).order_by(RadgameReportLog.timestamp.asc()).all()
-            prev_checkpoint = 0
-            if prev_rows:
-                try:
-                    prev_checkpoint = max(int(r.timer_checkpoint_ms or 0) for r in prev_rows)
-                except Exception:
-                    prev_checkpoint = sum(int(r.time_spent_ms or 0) for r in prev_rows)
-            new_checkpoint = int(prev_checkpoint + (time_spent_ms or 0))
-            full_llm_payload = {
-                'explanation': summary,
-                'errors': ClinicallySignificantErrors,
-                'matched_findings': MatchedFindings,
-                'raw_model_json': response_data
-            }
-            report_log = RadgameReportLog(
-                access_code_id=session['access_code'],
-                sample_id=case_id,
-                findings=findings,
-                #impression=impressions,
-                green_score=float(green_score),
-                green_score_std=float(std_score),
-                green_summary=json.dumps(full_llm_payload),
-                report_cases_completed_snapshot=pre_increment_total + 1,
-                time_spent_ms=time_spent_ms,
-                timer_checkpoint_ms=new_checkpoint
-            )
-            
-            db.session.add(report_log)
-            # Increment practice report counter on access code
-            if access_row:
-                try:
-                    current_val = int(access_row.report_cases_completed or 0)
-                except Exception:
-                    current_val = 0
-                if current_val < REPORT_POST_REQUIRED:
-                    access_row.report_cases_completed = current_val + 1
-            db.session.commit()
-        except Exception as db_error:
-            print(f"Database Error: {db_error}")
-            db.session.rollback()
-            return jsonify({'error': f"Database error: {db_error}"}), 500
-        
-        # Calculate StyleScore
-        style_data = {}
-        try:
-            style_response, style_score = calculate_style_score(findings, client)
-            style_data = {
-                'style_score': style_score,
-                'systematic_evaluation_score': float(style_response.systematic_evaluation_score),
-                'organization_language_score': float(style_response.organization_language_score),
-                'systematic_evaluation_recommendation': style_response.systematic_evaluation_recommendation,
-                'organization_language_recommendation': style_response.organization_language_recommendation
-            }
-        except Exception as style_error:
-            print(f"StyleScore error: {style_error}")
-            # Set default values if StyleScore fails
-            style_data = {
-                'style_score': 0,
-                'systematic_evaluation_score': 0,
-                'organization_language_score': 0,
-                'systematic_evaluation_recommendation': '',
-                'organization_language_recommendation': ''
-            }
-
-        return jsonify({
-            'green_score': green_score,
-            'summary': summary,
-            'errors': ClinicallySignificantErrors,
-            'matched_findings': MatchedFindings,
-            'ground_truth': {
-                'findings': case_data.get('Findings', ''),
-                'impressions': case_data.get('Impressions', '')
-            },
-            'timer_checkpoint_ms': report_log.timer_checkpoint_ms,
-            'style_data': style_data
-        })
-
-    except openai.APIError as e:
+      except openai.APIError as e:
         print(f"OpenAI API Error: {e}")
         return jsonify({'error': f"An error occurred with the OpenAI API: {e}"}), 500
-    except Exception as e:
-        print(f"Error getting GREEN score: {e}")
+      except Exception as e:
+        print(f"Error getting CRIMSON score: {e}")
         return jsonify({'error': f"A server error occurred: {e}"}), 500
+
+    # ----- Shared: DB logging, style scoring, and response (both paths) -----
+    try:
+        # Fetch current report cases completed BEFORE increment for snapshot
+        access_row = AccessCode.query.filter_by(code=session['access_code']).first()
+        pre_increment_total = int(access_row.report_cases_completed or 0) if access_row else 0
+        # Block further practice submissions if cap reached or post-test already taken
+        if access_row and access_row.took_report_pre and pre_increment_total >= REPORT_POST_REQUIRED:
+            return jsonify({'error': 'practice_complete'}), 403
+        if access_row and access_row.took_report_post:
+            return jsonify({'error': 'post_test_completed'}), 403
+        # Determine cumulative checkpoint for continuous timer
+        prev_rows = RadgameReportLog.query.filter_by(access_code_id=session['access_code']).order_by(RadgameReportLog.timestamp.asc()).all()
+        prev_checkpoint = 0
+        if prev_rows:
+            try:
+                prev_checkpoint = max(int(r.timer_checkpoint_ms or 0) for r in prev_rows)
+            except Exception:
+                prev_checkpoint = sum(int(r.time_spent_ms or 0) for r in prev_rows)
+        new_checkpoint = int(prev_checkpoint + (time_spent_ms or 0))
+        full_llm_payload = {
+            'explanation': summary,
+            'errors': ClinicallySignificantErrors,
+            'matched_findings': MatchedFindings,
+            'raw_model_json': response_data
+        }
+        report_log = RadgameReportLog(
+            access_code_id=session['access_code'],
+            sample_id=case_id,
+            findings=findings,
+            green_score=float(green_score),
+            green_score_std=float(std_score),
+            green_summary=json.dumps(full_llm_payload),
+            report_cases_completed_snapshot=pre_increment_total + 1,
+            time_spent_ms=time_spent_ms,
+            timer_checkpoint_ms=new_checkpoint
+        )
+
+        db.session.add(report_log)
+        # Increment practice report counter on access code
+        if access_row:
+            try:
+                current_val = int(access_row.report_cases_completed or 0)
+            except Exception:
+                current_val = 0
+            if current_val < REPORT_POST_REQUIRED:
+                access_row.report_cases_completed = current_val + 1
+        db.session.commit()
+    except Exception as db_error:
+        print(f"Database Error: {db_error}")
+        db.session.rollback()
+        return jsonify({'error': f"Database error: {db_error}"}), 500
+
+    # Calculate StyleScore
+    style_data = {}
+    try:
+        style_response, style_score = calculate_style_score(findings, client)
+        style_data = {
+            'style_score': style_score,
+            'systematic_evaluation_score': float(style_response.systematic_evaluation_score),
+            'organization_language_score': float(style_response.organization_language_score),
+            'systematic_evaluation_recommendation': style_response.systematic_evaluation_recommendation,
+            'organization_language_recommendation': style_response.organization_language_recommendation
+        }
+    except Exception as style_error:
+        print(f"StyleScore error: {style_error}")
+        style_data = {
+            'style_score': 0,
+            'systematic_evaluation_score': 0,
+            'organization_language_score': 0,
+            'systematic_evaluation_recommendation': '',
+            'organization_language_recommendation': ''
+        }
+
+    result_payload = {
+        'green_score': green_score,
+        'summary': summary,
+        'errors': ClinicallySignificantErrors,
+        'matched_findings': MatchedFindings,
+        'ground_truth': {
+            'findings': case_data.get('Findings', ''),
+            'impressions': case_data.get('Impressions', '')
+        },
+        'timer_checkpoint_ms': report_log.timer_checkpoint_ms,
+        'style_data': style_data,
+        'scorer': REPORT_SCORER,
+    }
+
+    # When using MedGemma/CRIMSON, attach the rich structured data
+    if REPORT_SCORER == 'medgemma':
+        try:
+            result_payload['crimson'] = {
+                'crimson_score': _crimson_frontend.get('crimson_score', 0),
+                'error_counts': _crimson_frontend.get('error_counts', {}),
+                'weighted_error_counts': _crimson_frontend.get('weighted_error_counts', {}),
+                'metrics': _crimson_frontend.get('metrics', {}),
+                'false_findings': _crimson_frontend.get('false_findings', []),
+                'missing_findings': _crimson_frontend.get('missing_findings', []),
+                'attribute_errors': _crimson_frontend.get('attribute_errors', []),
+                'matched_findings': _crimson_frontend.get('matched_findings', []),
+                'reference_findings': _crimson_frontend.get('reference_findings', []),
+                'predicted_findings': _crimson_frontend.get('predicted_findings', []),
+            }
+        except NameError:
+            pass
+
+    return jsonify(result_payload)
 
 @app.route('/test_openai') # openai endpoint works! 
 def test_openai():
@@ -1730,5 +1803,5 @@ def inject_globals():
     }
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
-    # app.run(host='0.0.0.0', debug=True, port=5000)
+    # app.run(debug=True, port=5000)
+    app.run(host='0.0.0.0', debug=True, port=5000)
