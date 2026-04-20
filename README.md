@@ -82,6 +82,8 @@ RadGame builds upon publicly available datasets:
 
    > **Note:** `REPORT_SCORER=gpt` is required to use the report feature. The default points to HPC cluster paths that won't exist on a local machine.
 
+   > **Security:** Never commit `.env` to version control. It is already listed in `.gitignore`.
+
 
 ## Dataset Generation
 
@@ -251,7 +253,7 @@ The scoring system evaluates:
 
 ## Security Note
 
-Always keep `secretcodes.py` out of version control, use environment variables for sensitive data in production, review code for hardcoded credentials before sharing
+Always keep `.env` out of version control. Use environment variables for sensitive data in production and review code for hardcoded credentials before sharing.
 
 ## Acknowledgements
 
