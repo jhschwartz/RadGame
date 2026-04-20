@@ -27,12 +27,15 @@ try:
 except ImportError:
     SECRET_FILE_KEY = None
 
+from dotenv import load_dotenv
+load_dotenv()
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_DIR = SCRIPT_DIR / "data"
 
-# update these paths for your system
-REX_METADATA = "<path-to-rexgradient>/metadata/train_metadata.csv"
-TEST_METADATA_JSON = "<path-to-rexgradient>/metadata/test_metadata.json"
+REXGRADIENT = os.environ.get("REXGRADIENT", "")
+REX_METADATA = f"{REXGRADIENT}/metadata/train_metadata.csv"
+TEST_METADATA_JSON = f"{REXGRADIENT}/metadata/test_metadata.json"
 
 SEED = 42
 # target number of cases by finding count

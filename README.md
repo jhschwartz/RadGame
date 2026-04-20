@@ -45,7 +45,7 @@ RadGame builds upon publicly available datasets:
 
 - Conda (Anaconda or Miniconda)
 - Python 3.11+
-- OpenAI API key (for dataset generation only)
+- OpenAI API key — needed to **run the app** (report scoring uses GPT-o3) and to **generate the report dataset** (uses GPT-4o-mini)
 
 ### Environment Setup
 
@@ -66,17 +66,21 @@ RadGame builds upon publicly available datasets:
    pip install -r requirements.txt
    ```
 
-4. **Set up API keys** (for dataset generation)
-   
-   Create a `secretcodes.py` file in the project root:
-   ```python
-   OPENAI_API_KEY = "your-openai-api-key-here"
-   ```
-   
-   Or set environment variable:
+4. **Configure environment variables**
+
+   Copy `.env.example` to `.env` and fill in your values:
    ```bash
-   export OPENAI_API_KEY="your-openai-api-key-here"
+   cp .env.example .env
    ```
+
+   Then edit `.env`:
+   ```
+   OPENAI_API_KEY=sk-...
+   REPORT_SCORER=gpt
+   REXGRADIENT=/path/to/rexgradient   # only needed for dataset generation
+   ```
+
+   > **Note:** `REPORT_SCORER=gpt` is required to use the report feature. The default points to HPC cluster paths that won't exist on a local machine.
 
 
 ## Dataset Generation
@@ -106,11 +110,7 @@ python generate_report_dataset.py --nrows 500 --skip-confirm
 
 **Output:** `data/sample_rex.csv`
 
-**Setup:** Edit `generate_report_dataset.py` and update these paths to match your system:
-```python
-REX_METADATA = "<path-to-rexgradient>/metadata/train_metadata.csv"
-TEST_METADATA_JSON = "<path-to-rexgradient>/metadata/test_metadata.json"
-```
+**Setup:** Set `REXGRADIENT` in your `.env` file to the root of your local ReXGradient-160K download.
 
 ### 2. Localize Dataset
 
